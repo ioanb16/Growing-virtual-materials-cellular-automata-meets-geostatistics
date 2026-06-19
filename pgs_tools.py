@@ -2,6 +2,7 @@ import numpy as np
 import gstools as gs
 import matplotlib.pyplot as plt
 from scipy.stats import norm
+from matplotlib.patches import Patch
 
 
 def make_gaussian_fields(
@@ -36,7 +37,7 @@ def make_gaussian_fields(
 
 def make_lithotype_map(
     field_1, field_2,
-    granite=0.20, sandstone=0.50, quartz=0.30,
+    Mat1=0.20, Mat2=0.50, Mat3=0.30,
     help=False
 ):
     if help:
@@ -44,14 +45,14 @@ def make_lithotype_map(
         make_lithotype_map() parameters:
         field_1      : first Gaussian field (from make_gaussian_fields)
         field_2      : second Gaussian field (from make_gaussian_fields)
-        granite      : proportion of granite (default 0.20)
-        sandstone    : proportion of sandstone (default 0.50)
-        quartz       : proportion of quartz (default 0.30)
+        Mat1         : proportion of material 1 (default 0.20)
+        Mat2         : proportion of material 2 (default 0.50)
+        Mat3         : proportion of material 3 (default 0.30)
         note         : proportions must sum to 1.0
         """)
         return
-    cut_1 = norm.ppf(granite)
-    cut_2 = norm.ppf(sandstone / (quartz + sandstone))
+    cut_1 = norm.ppf(Mat1)
+    cut_2 = norm.ppf(Mat2 / (Mat3 + Mat2))
     size = field_1.shape[0]
     lithotype_map = np.zeros((size, size))
     lithotype_map[(field_1 >= cut_1) & (field_2 < cut_2)] = 1
@@ -112,4 +113,33 @@ def plot_fields(
     axes[0].set_title('Field 1')
     axes[1].imshow(field_2, cmap=cmap)
     axes[1].set_title('Field 2')
+    plt.show()
+
+
+
+
+def plot_lithotype_map(
+    lithotype_map,
+    cmap='copper', labels=['Mat1', 'Mat2', 'Mat3'], figsize=(6, 6),
+    help=False
+):
+    if help:
+        print("""
+        plot_lithotype_map() parameters:
+        lithotype_map : classified map (from make_lithotype_map)
+        cmap          : colormap (default 'copper')
+        labels        : names for rock types 0,1,2 (default ['Mat1','Mat2','Mat3'])
+        figsize       : figure size (default (6, 6))
+        """)
+        return
+    fig, ax = plt.subplots(figsize=figsize)
+    ax.imshow(lithotype_map, cmap=cmap, vmin=0, vmax=2)
+
+    colormap = plt.get_cmap(cmap)
+    patches = [
+        Patch(color=colormap(0/2), label=labels[0]),
+        Patch(color=colormap(1/2), label=labels[1]),
+        Patch(color=colormap(2/2), label=labels[2])
+    ]
+    ax.legend(handles=patches, loc='upper right')
     plt.show()
