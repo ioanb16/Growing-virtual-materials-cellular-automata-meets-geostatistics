@@ -3,6 +3,8 @@ import gstools as gs
 import matplotlib.pyplot as plt
 from scipy.stats import norm
 from matplotlib.patches import Patch
+from matplotlib.animation import FuncAnimation
+from IPython.display import HTML
 
 
 def make_gaussian_fields(
@@ -72,8 +74,15 @@ def run_ca(
         generations   : number of CA generations (default 100)
         threshold     : neighbour agreement needed to change a cell (default 1)
         checkpoints   : generations to print stats at (default [10, 100])
+              
+        returns:
+        lithotype_map : the evolved map after the specified generations
+        snapshots     : dict of {generation: map_copy} for each checkpoint
         """)
         return
+    
+    snapshots = {}
+
     for generation in range(generations):
         new_grid = lithotype_map.copy()
         for i in range(1, lithotype_map.shape[0]-1):
@@ -90,7 +99,9 @@ def run_ca(
             print(f"  Rock type 0: {(lithotype_map == 0).sum() / total * 100:.1f}%")
             print(f"  Rock type 1: {(lithotype_map == 1).sum() / total * 100:.1f}%")
             print(f"  Rock type 2: {(lithotype_map == 2).sum() / total * 100:.1f}%")
-    return lithotype_map
+            snapshots[generation+1] = lithotype_map.copy()
+    
+    return lithotype_map, snapshots
 
 
 
@@ -143,3 +154,37 @@ def plot_lithotype_map(
     ]
     ax.legend(handles=patches, loc='upper right')
     plt.show()
+
+
+
+
+
+def plot_ca_evolution(
+    snapshots,
+    cmap='viridis', figsize=(6, 6), interval=500,
+    help=False
+):
+    if help:
+        print("""
+        plot_ca_evolution() parameters:
+        snapshots : dict of {generation: map} from run_ca
+        cmap      : colormap (default 'viridis')
+        figsize   : figure size (default (6, 6))
+        interval  : milliseconds between frames (default 500)
+        """)
+        return
+
+    generations = sorted(snapshots.keys())
+    fig, ax = plt.subplots(figsize=figsize)
+    im = ax.imshow(snapshots[generations[0]], cmap=cmap, vmin=0, vmax=2)
+    title = ax.set_title(f"Generation {generations[0]}")
+
+    def update(frame):
+        gen = generations[frame]
+        im.set_data(snapshots[gen])
+        title.set_text(f"Generation {gen}")
+        return im, title
+
+    ani = FuncAnimation(fig, update, frames=len(generations), interval=interval)
+    plt.close(fig)
+    return HTML(ani.to_jshtml())
