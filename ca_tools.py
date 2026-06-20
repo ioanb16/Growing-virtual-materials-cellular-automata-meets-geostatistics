@@ -84,8 +84,17 @@ def plot_ca_evolution(
 
 def get_neighbours(grid, i, j):
     # von Neumann neighbourhood: the 4 axis-aligned neighbours, no diagonals
-    north = grid[i-1, j]
-    south = grid[i+1, j]
-    west  = grid[i, j-1]
-    east  = grid[i, j+1]
-    return [north, south, west, east]
+
+    rows, cols = grid.shape
+    neighbours = []
+
+    if i-1 >= 0:
+        neighbours.append(grid[i-1, j])  # North
+    if i+1 < rows:
+        neighbours.append(grid[i+1, j])  # South
+    if j-1 >= 0:
+        neighbours.append(grid[i, j-1])  # West
+    if j+1 < cols:
+        neighbours.append(grid[i, j+1])  # East
+    
+    return neighbours
