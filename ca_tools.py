@@ -82,7 +82,7 @@ def plot_ca_evolution(
 
 
 
-def get_neighbours(grid, i, j):
+def get_neighbours(grid, i, j, neighbourhood='von_neumann'):
     # von Neumann neighbourhood: the 4 axis-aligned neighbours, no diagonals
 
     rows, cols = grid.shape
@@ -97,4 +97,15 @@ def get_neighbours(grid, i, j):
     if j+1 < cols:
         neighbours.append(grid[i, j+1])  # East
     
+    if neighbourhood == 'moore':
+        # Moore neighborhood: adds the 4 diagonal neighbours
+        if i-1 >= 0 and j-1 >= 0:
+            neighbours.append(grid[i-1, j-1])  # Northwest
+        if i-1 >= 0 and j+1 < cols:
+            neighbours.append(grid[i-1, j+1])  # Northeast  
+        if i+1 < rows and j-1 >= 0:
+            neighbours.append(grid[i+1, j-1])  # Southwest
+        if i+1 < rows and j+1 < cols:
+            neighbours.append(grid[i+1, j+1])  # Southeast
+
     return neighbours
