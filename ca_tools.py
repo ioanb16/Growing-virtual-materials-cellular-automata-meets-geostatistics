@@ -7,27 +7,34 @@ from matplotlib.patches import Patch
 from matplotlib.animation import FuncAnimation
 from IPython.display import HTML
 
-def get_neighbours(grid, i, j, neighbourhood='von_neumann', radius=1):
+def get_neighbours(grid, i, j, neighbourhood='von_neumann', radius=1, boundary='fixed'):
     rows, cols = grid.shape
     neighbours = []
 
     for di in range(-radius, radius + 1):
         for dj in range(-radius, radius + 1):
             if di == 0 and dj == 0:
-                continue  # skip the cell itself
+                continue
 
             if neighbourhood == 'von_neumann':
-                # von Neumann: total steps along the axes, combined, must fit within radius
                 if abs(di) + abs(dj) > radius:
                     continue
             elif neighbourhood == 'moore':
-                # Moore: steps in any single direction must fit within radius
                 if max(abs(di), abs(dj)) > radius:
                     continue
 
             ni, nj = i + di, j + dj
-            if 0 <= ni < rows and 0 <= nj < cols:
-                neighbours.append(grid[ni, nj])
+
+            if boundary == 'fixed':
+                # skip if it falls outside the grid - edge cells get fewer neighbours
+                if ni < 0 or ni >= rows or nj < 0 or nj >= cols:
+                    continue
+            elif boundary == 'periodic':
+                # wrap around to the opposite edge instead of skipping
+                ni %= rows
+                nj %= cols
+
+            neighbours.append(grid[ni, nj])
 
     return neighbours
 
