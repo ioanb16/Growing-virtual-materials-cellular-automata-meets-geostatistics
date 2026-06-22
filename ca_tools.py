@@ -26,13 +26,21 @@ def get_neighbours(grid, i, j, neighbourhood='von_neumann', radius=1, boundary='
             ni, nj = i + di, j + dj
 
             if boundary == 'fixed':
-                # skip if it falls outside the grid - edge cells get fewer neighbours
                 if ni < 0 or ni >= rows or nj < 0 or nj >= cols:
                     continue
             elif boundary == 'periodic':
-                # wrap around to the opposite edge instead of skipping
                 ni %= rows
                 nj %= cols
+            elif boundary == 'reflective':
+                # mirror past the edge, without repeating the edge cell itself
+                if ni < 0:
+                    ni = -ni
+                elif ni >= rows:
+                    ni = 2 * (rows - 1) - ni
+                if nj < 0:
+                    nj = -nj
+                elif nj >= cols:
+                    nj = 2 * (cols - 1) - nj
 
             neighbours.append(grid[ni, nj])
 
