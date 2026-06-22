@@ -57,7 +57,12 @@ def get_neighbours(grid, i, j, neighbourhood='von_neumann', radius=1, boundary='
 def decide_new_state(neighbour_values, current_state, threshold=1, neighbour_weights=None):
     counts = np.bincount(neighbour_values, weights=neighbour_weights, minlength=3)
     majority_state = counts.argmax()
-    if counts.max() > threshold:
+
+    # per-type threshold: a dict lets each rock type resist being overwritten
+    # by a different amount, instead of one global number for everyone
+    eff_threshold = threshold[current_state] if isinstance(threshold, dict) else threshold
+
+    if counts.max() > eff_threshold:
         return majority_state
     return current_state
 
