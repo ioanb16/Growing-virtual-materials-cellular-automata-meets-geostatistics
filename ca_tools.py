@@ -98,6 +98,8 @@ def run_ca(
     weights=None, direct_weight=1, diagonal_weight=1,
     rule='majority', threshold=1, temperature=0.0, interaction_matrix=None, rng=None,
     update_scheme='synchronous',
+    locked_mask=None,
+    nucleation_rate=0.0,
     help=False
 ):
     if help:
@@ -113,12 +115,14 @@ def run_ca(
         rule, threshold, temperature, interaction_matrix
                         : passed straight through to decide_new_state() - see its help
 
-        rng             : numpy random Generator, for reproducible probabilistic/async behaviour
-                          (created automatically if not provided)
+        rng             : numpy random Generator, for reproducible probabilistic/async/nucleation behaviour
 
-        update_scheme   : 'synchronous' (whole grid updates at once, from the same snapshot)
-                          or 'asynchronous' (cells update one at a time, in random order,
-                          seeing already-updated neighbours within the same generation)
+        update_scheme   : 'synchronous' or 'asynchronous' - see stage 3 notes
+
+        locked_mask     : boolean array same shape as the map. True = that cell never changes
+
+        nucleation_rate : probability per cell per generation of spontaneously becoming
+                          a random state, regardless of neighbours (default 0.0 = off)
 
         returns:
         lithotype_map : the evolved map after the specified generations
@@ -138,6 +142,8 @@ def run_ca(
             new_grid = lithotype_map.copy()
             for i in range(rows):
                 for j in range(cols):
+                    if locked_mask is not None and locked_mask[i, j]:
+                        continue
                     values, w = get_neighbours(lithotype_map, i, j,
                                                 neighbourhood=neighbourhood, radius=radius, boundary=boundary,
                                                 weights=weights, direct_weight=direct_weight, diagonal_weight=diagonal_weight)
@@ -150,12 +156,21 @@ def run_ca(
             order = [(i, j) for i in range(rows) for j in range(cols)]
             rng.shuffle(order)
             for i, j in order:
+                if locked_mask is not None and locked_mask[i, j]:
+                    continue
                 values, w = get_neighbours(lithotype_map, i, j,
                                             neighbourhood=neighbourhood, radius=radius, boundary=boundary,
                                             weights=weights, direct_weight=direct_weight, diagonal_weight=diagonal_weight)
                 lithotype_map[i, j] = decide_new_state(values, lithotype_map[i, j], threshold=threshold,
                                                         neighbour_weights=w, rule=rule, temperature=temperature,
                                                         interaction_matrix=interaction_matrix, rng=rng)
+
+        if nucleation_rate > 0:
+            nucleation_mask = rng.random(lithotype_map.shape) < nucleation_rate
+            if locked_mask is not None:
+                nucleation_mask &= ~locked_mask
+            random_states = rng.integers(0, 3, size=lithotype_map.shape)
+            lithotype_map[nucleation_mask] = random_states[nucleation_mask]
 
         if generation+1 in checkpoints:
             total = lithotype_map.size
