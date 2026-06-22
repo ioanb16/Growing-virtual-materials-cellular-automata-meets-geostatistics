@@ -100,6 +100,7 @@ def run_ca(
     update_scheme='synchronous',
     locked_mask=None,
     nucleation_rate=0.0,
+    target_proportions=None, conservation_strength=0.0, conservation_scale=10,
     help=False
 ):
     if help:
@@ -124,6 +125,14 @@ def run_ca(
         nucleation_rate : probability per cell per generation of spontaneously becoming
                           a random state, regardless of neighbours (default 0.0 = off)
 
+        target_proportions    : dict {state: proportion} to pull the map back toward
+        conservation_strength : how strongly to enforce target_proportions (default 0.0 = off)
+        conservation_scale    : multiplier on the threshold adjustment (default 10).
+                                NOTE: this whole mechanism is an untested heuristic -
+                                tested once and didn't clearly work with the majority
+                                rule's integer counts. Needs real tuning later, against
+                                actual morphology metrics, not guessed blindly now.
+
         returns:
         lithotype_map : the evolved map after the specified generations
         snapshots     : dict of {generation: map_copy} for each checkpoint
@@ -138,6 +147,18 @@ def run_ca(
 
     for generation in range(generations):
 
+        if target_proportions is not None and conservation_strength > 0:
+            counts = np.bincount(lithotype_map.flatten(), minlength=3)
+            current_proportions = counts / lithotype_map.size
+            effective_threshold = {}
+            for state in range(3):
+                base = threshold[state] if isinstance(threshold, dict) else threshold
+                target = target_proportions.get(state, current_proportions[state])
+                drift = target - current_proportions[state]
+                effective_threshold[state] = base + conservation_strength * drift * conservation_scale
+        else:
+            effective_threshold = threshold
+
         if update_scheme == 'synchronous':
             new_grid = lithotype_map.copy()
             for i in range(rows):
@@ -147,7 +168,7 @@ def run_ca(
                     values, w = get_neighbours(lithotype_map, i, j,
                                                 neighbourhood=neighbourhood, radius=radius, boundary=boundary,
                                                 weights=weights, direct_weight=direct_weight, diagonal_weight=diagonal_weight)
-                    new_grid[i, j] = decide_new_state(values, lithotype_map[i, j], threshold=threshold,
+                    new_grid[i, j] = decide_new_state(values, lithotype_map[i, j], threshold=effective_threshold,
                                                        neighbour_weights=w, rule=rule, temperature=temperature,
                                                        interaction_matrix=interaction_matrix, rng=rng)
             lithotype_map = new_grid
@@ -161,7 +182,7 @@ def run_ca(
                 values, w = get_neighbours(lithotype_map, i, j,
                                             neighbourhood=neighbourhood, radius=radius, boundary=boundary,
                                             weights=weights, direct_weight=direct_weight, diagonal_weight=diagonal_weight)
-                lithotype_map[i, j] = decide_new_state(values, lithotype_map[i, j], threshold=threshold,
+                lithotype_map[i, j] = decide_new_state(values, lithotype_map[i, j], threshold=effective_threshold,
                                                         neighbour_weights=w, rule=rule, temperature=temperature,
                                                         interaction_matrix=interaction_matrix, rng=rng)
 
