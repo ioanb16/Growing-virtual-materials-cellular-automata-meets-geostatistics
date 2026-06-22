@@ -53,6 +53,14 @@ def get_neighbours(grid, i, j, neighbourhood='von_neumann', radius=1, boundary='
 
     return values, value_weights
 
+
+def decide_new_state(neighbour_values, current_state, threshold=1):
+    counts = np.bincount(neighbour_values, minlength=3)
+    majority_state = counts.argmax()
+    if counts.max() > threshold:
+        return majority_state
+    return current_state
+
 def run_ca(
     lithotype_map,
     generations=100, threshold=1, checkpoints=[10, 100],
