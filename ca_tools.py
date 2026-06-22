@@ -54,17 +54,42 @@ def get_neighbours(grid, i, j, neighbourhood='von_neumann', radius=1, boundary='
     return values, value_weights
 
 
-def decide_new_state(neighbour_values, current_state, threshold=1, neighbour_weights=None):
+def decide_new_state(neighbour_values, current_state, threshold=1, neighbour_weights=None,
+                      rule='majority', temperature=0.0, interaction_matrix=None, rng=None):
     counts = np.bincount(neighbour_values, weights=neighbour_weights, minlength=3)
-    majority_state = counts.argmax()
 
-    # per-type threshold: a dict lets each rock type resist being overwritten
-    # by a different amount, instead of one global number for everyone
-    eff_threshold = threshold[current_state] if isinstance(threshold, dict) else threshold
+    if rule == 'majority':
+        majority_state = counts.argmax()
+        eff_threshold = threshold[current_state] if isinstance(threshold, dict) else threshold
+        if counts.max() > eff_threshold:
+            return majority_state
+        return current_state
 
-    if counts.max() > eff_threshold:
-        return majority_state
-    return current_state
+    elif rule == 'probabilistic':
+        if interaction_matrix is None:
+            # default: free to touch your own type, costs 1 to touch any different type
+            interaction_matrix = np.array([[0, 1, 1], [1, 0, 1], [1, 1, 0]])
+        if rng is None:
+            rng = np.random.default_rng()
+
+        candidate_state = counts.argmax()
+        if candidate_state == current_state:
+            return current_state
+
+        n_states = len(counts)
+        energy_current = sum(interaction_matrix[current_state, s] * counts[s] for s in range(n_states))
+        energy_candidate = sum(interaction_matrix[candidate_state, s] * counts[s] for s in range(n_states))
+        delta = energy_candidate - energy_current
+
+        if delta <= 0:
+            return candidate_state   # switching lowers energy - always favourable, just do it
+        if temperature <= 0:
+            return current_state     # switching raises energy, and no randomness allowed - refuse
+
+        probability = np.exp(-delta / temperature)
+        if rng.random() < probability:
+            return candidate_state   # accept the unfavourable switch anyway, by chance
+        return current_state
 
 def run_ca(
     lithotype_map,
