@@ -54,8 +54,8 @@ def get_neighbours(grid, i, j, neighbourhood='von_neumann', radius=1, boundary='
     return values, value_weights
 
 
-def decide_new_state(neighbour_values, current_state, threshold=1):
-    counts = np.bincount(neighbour_values, minlength=3)
+def decide_new_state(neighbour_values, current_state, threshold=1, neighbour_weights=None):
+    counts = np.bincount(neighbour_values, weights=neighbour_weights, minlength=3)
     majority_state = counts.argmax()
     if counts.max() > threshold:
         return majority_state
