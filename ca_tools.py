@@ -7,9 +7,11 @@ from matplotlib.patches import Patch
 from matplotlib.animation import FuncAnimation
 from IPython.display import HTML
 
-def get_neighbours(grid, i, j, neighbourhood='von_neumann', radius=1, boundary='fixed'):
+def get_neighbours(grid, i, j, neighbourhood='von_neumann', radius=1, boundary='fixed',
+                    weights=None, direct_weight=1, diagonal_weight=1):
     rows, cols = grid.shape
-    neighbours = []
+    values = []
+    value_weights = []
 
     for di in range(-radius, radius + 1):
         for dj in range(-radius, radius + 1):
@@ -32,7 +34,6 @@ def get_neighbours(grid, i, j, neighbourhood='von_neumann', radius=1, boundary='
                 ni %= rows
                 nj %= cols
             elif boundary == 'reflective':
-                # mirror past the edge, without repeating the edge cell itself
                 if ni < 0:
                     ni = -ni
                 elif ni >= rows:
@@ -42,9 +43,15 @@ def get_neighbours(grid, i, j, neighbourhood='von_neumann', radius=1, boundary='
                 elif nj >= cols:
                     nj = 2 * (cols - 1) - nj
 
-            neighbours.append(grid[ni, nj])
+            values.append(grid[ni, nj])
 
-    return neighbours
+            # weight lookup: custom dict takes priority, otherwise direct/diagonal default
+            if weights is not None and (di, dj) in weights:
+                value_weights.append(weights[(di, dj)])
+            else:
+                value_weights.append(direct_weight if (di == 0 or dj == 0) else diagonal_weight)
+
+    return values, value_weights
 
 def run_ca(
     lithotype_map,
