@@ -103,24 +103,22 @@ def run_ca(
         generations   : number of CA generations (default 100)
         threshold     : neighbour agreement needed to change a cell (default 1)
         checkpoints   : generations to print stats at (default [10, 100])
-              
+
         returns:
         lithotype_map : the evolved map after the specified generations
         snapshots     : dict of {generation: map_copy} for each checkpoint
         """)
         return
-    
+
     snapshots = {}
 
     for generation in range(generations):
         new_grid = lithotype_map.copy()
         for i in range(1, lithotype_map.shape[0]-1):
             for j in range(1, lithotype_map.shape[1]-1):
-                neighbours = [lithotype_map[i-1, j], lithotype_map[i+1, j],
-                              lithotype_map[i, j-1], lithotype_map[i, j+1]]
-                counts = np.bincount(neighbours, minlength=3)
-                if counts.max() > threshold:
-                    new_grid[i, j] = counts.argmax()
+                values, weights = get_neighbours(lithotype_map, i, j)
+                new_grid[i, j] = decide_new_state(values, lithotype_map[i, j],
+                                                   threshold=threshold, neighbour_weights=weights)
         lithotype_map = new_grid
         if generation+1 in checkpoints:
             total = lithotype_map.size
@@ -129,7 +127,7 @@ def run_ca(
             print(f"  Rock type 1: {(lithotype_map == 1).sum() / total * 100:.1f}%")
             print(f"  Rock type 2: {(lithotype_map == 2).sum() / total * 100:.1f}%")
             snapshots[generation+1] = lithotype_map.copy()
-    
+
     return lithotype_map, snapshots
 
 def plot_ca_evolution(
