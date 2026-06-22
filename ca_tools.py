@@ -97,6 +97,7 @@ def run_ca(
     neighbourhood='von_neumann', radius=1, boundary='fixed',
     weights=None, direct_weight=1, diagonal_weight=1,
     rule='majority', threshold=1, temperature=0.0, interaction_matrix=None, rng=None,
+    update_scheme='synchronous',
     help=False
 ):
     if help:
@@ -109,8 +110,15 @@ def run_ca(
         neighbourhood, radius, boundary, weights, direct_weight, diagonal_weight
                         : passed straight through to get_neighbours() - see its help
 
-        rule, threshold, temperature, interaction_matrix, rng
+        rule, threshold, temperature, interaction_matrix
                         : passed straight through to decide_new_state() - see its help
+
+        rng             : numpy random Generator, for reproducible probabilistic/async behaviour
+                          (created automatically if not provided)
+
+        update_scheme   : 'synchronous' (whole grid updates at once, from the same snapshot)
+                          or 'asynchronous' (cells update one at a time, in random order,
+                          seeing already-updated neighbours within the same generation)
 
         returns:
         lithotype_map : the evolved map after the specified generations
@@ -118,19 +126,37 @@ def run_ca(
         """)
         return
 
+    if rng is None:
+        rng = np.random.default_rng()
+
     snapshots = {}
+    rows, cols = lithotype_map.shape
 
     for generation in range(generations):
-        new_grid = lithotype_map.copy()
-        for i in range(lithotype_map.shape[0]):
-            for j in range(lithotype_map.shape[1]):
+
+        if update_scheme == 'synchronous':
+            new_grid = lithotype_map.copy()
+            for i in range(rows):
+                for j in range(cols):
+                    values, w = get_neighbours(lithotype_map, i, j,
+                                                neighbourhood=neighbourhood, radius=radius, boundary=boundary,
+                                                weights=weights, direct_weight=direct_weight, diagonal_weight=diagonal_weight)
+                    new_grid[i, j] = decide_new_state(values, lithotype_map[i, j], threshold=threshold,
+                                                       neighbour_weights=w, rule=rule, temperature=temperature,
+                                                       interaction_matrix=interaction_matrix, rng=rng)
+            lithotype_map = new_grid
+
+        elif update_scheme == 'asynchronous':
+            order = [(i, j) for i in range(rows) for j in range(cols)]
+            rng.shuffle(order)
+            for i, j in order:
                 values, w = get_neighbours(lithotype_map, i, j,
                                             neighbourhood=neighbourhood, radius=radius, boundary=boundary,
                                             weights=weights, direct_weight=direct_weight, diagonal_weight=diagonal_weight)
-                new_grid[i, j] = decide_new_state(values, lithotype_map[i, j], threshold=threshold,
-                                                   neighbour_weights=w, rule=rule, temperature=temperature,
-                                                   interaction_matrix=interaction_matrix, rng=rng)
-        lithotype_map = new_grid
+                lithotype_map[i, j] = decide_new_state(values, lithotype_map[i, j], threshold=threshold,
+                                                        neighbour_weights=w, rule=rule, temperature=temperature,
+                                                        interaction_matrix=interaction_matrix, rng=rng)
+
         if generation+1 in checkpoints:
             total = lithotype_map.size
             print(f"Generation {generation+1}:")
