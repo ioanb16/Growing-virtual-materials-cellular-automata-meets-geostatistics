@@ -93,16 +93,24 @@ def decide_new_state(neighbour_values, current_state, threshold=1, neighbour_wei
 
 def run_ca(
     lithotype_map,
-    generations=100, threshold=1, checkpoints=[10, 100],
+    generations=100, checkpoints=[10, 100],
+    neighbourhood='von_neumann', radius=1, boundary='fixed',
+    weights=None, direct_weight=1, diagonal_weight=1,
+    rule='majority', threshold=1, temperature=0.0, interaction_matrix=None, rng=None,
     help=False
 ):
     if help:
         print("""
         run_ca() parameters:
-        lithotype_map : the map to evolve (from make_lithotype_map)
-        generations   : number of CA generations (default 100)
-        threshold     : neighbour agreement needed to change a cell (default 1)
-        checkpoints   : generations to print stats at (default [10, 100])
+        lithotype_map   : the map to evolve (from make_lithotype_map)
+        generations     : number of CA generations (default 100)
+        checkpoints     : generations to print stats at (default [10, 100])
+
+        neighbourhood, radius, boundary, weights, direct_weight, diagonal_weight
+                        : passed straight through to get_neighbours() - see its help
+
+        rule, threshold, temperature, interaction_matrix, rng
+                        : passed straight through to decide_new_state() - see its help
 
         returns:
         lithotype_map : the evolved map after the specified generations
@@ -114,11 +122,14 @@ def run_ca(
 
     for generation in range(generations):
         new_grid = lithotype_map.copy()
-        for i in range(1, lithotype_map.shape[0]-1):
-            for j in range(1, lithotype_map.shape[1]-1):
-                values, weights = get_neighbours(lithotype_map, i, j)
-                new_grid[i, j] = decide_new_state(values, lithotype_map[i, j],
-                                                   threshold=threshold, neighbour_weights=weights)
+        for i in range(lithotype_map.shape[0]):
+            for j in range(lithotype_map.shape[1]):
+                values, w = get_neighbours(lithotype_map, i, j,
+                                            neighbourhood=neighbourhood, radius=radius, boundary=boundary,
+                                            weights=weights, direct_weight=direct_weight, diagonal_weight=diagonal_weight)
+                new_grid[i, j] = decide_new_state(values, lithotype_map[i, j], threshold=threshold,
+                                                   neighbour_weights=w, rule=rule, temperature=temperature,
+                                                   interaction_matrix=interaction_matrix, rng=rng)
         lithotype_map = new_grid
         if generation+1 in checkpoints:
             total = lithotype_map.size
