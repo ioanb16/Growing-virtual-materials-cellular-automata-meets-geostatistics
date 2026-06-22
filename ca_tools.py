@@ -127,15 +127,12 @@ def run_ca(
 
         target_proportions    : dict {state: proportion} to pull the map back toward
         conservation_strength : how strongly to enforce target_proportions (default 0.0 = off)
-        conservation_scale    : multiplier on the threshold adjustment (default 10).
-                                NOTE: this whole mechanism is an untested heuristic -
-                                tested once and didn't clearly work with the majority
-                                rule's integer counts. Needs real tuning later, against
-                                actual morphology metrics, not guessed blindly now.
+        conservation_scale    : multiplier on the threshold adjustment (default 10)
 
         returns:
         lithotype_map : the evolved map after the specified generations
         snapshots     : dict of {generation: map_copy} for each checkpoint
+        history       : list of proportion arrays, one per generation (for plotting/stability checks)
         """)
         return
 
@@ -143,6 +140,7 @@ def run_ca(
         rng = np.random.default_rng()
 
     snapshots = {}
+    history = []
     rows, cols = lithotype_map.shape
 
     for generation in range(generations):
@@ -193,15 +191,18 @@ def run_ca(
             random_states = rng.integers(0, 3, size=lithotype_map.shape)
             lithotype_map[nucleation_mask] = random_states[nucleation_mask]
 
+        total = lithotype_map.size
+        current_props = np.array([(lithotype_map == s).sum() / total for s in range(3)])
+        history.append(current_props)
+
         if generation+1 in checkpoints:
-            total = lithotype_map.size
             print(f"Generation {generation+1}:")
-            print(f"  Rock type 0: {(lithotype_map == 0).sum() / total * 100:.1f}%")
-            print(f"  Rock type 1: {(lithotype_map == 1).sum() / total * 100:.1f}%")
-            print(f"  Rock type 2: {(lithotype_map == 2).sum() / total * 100:.1f}%")
+            print(f"  Rock type 0: {current_props[0] * 100:.1f}%")
+            print(f"  Rock type 1: {current_props[1] * 100:.1f}%")
+            print(f"  Rock type 2: {current_props[2] * 100:.1f}%")
             snapshots[generation+1] = lithotype_map.copy()
 
-    return lithotype_map, snapshots
+    return lithotype_map, snapshots, history
 
 def plot_ca_evolution(
     snapshots,
@@ -235,3 +236,16 @@ def plot_ca_evolution(
 
 
 
+def summarize_stability(history, window=10, tolerance=0.5):
+    history = np.array(history)
+    if len(history) < window + 1:
+        print("Not enough generations to assess stability yet.")
+        return
+
+    recent_change = np.abs(history[-1] - history[-window]) * 100
+    max_change = recent_change.max()
+
+    if max_change <= tolerance:
+        print(f"Looks stable: max change over the last {window} generations was {max_change:.2f} percentage points.")
+    else:
+        print(f"Still drifting: max change over the last {window} generations was {max_change:.2f} percentage points.")
