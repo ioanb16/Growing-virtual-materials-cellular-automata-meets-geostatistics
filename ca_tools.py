@@ -1,9 +1,6 @@
 
 import numpy as np
-import gstools as gs
 import matplotlib.pyplot as plt
-from scipy.stats import norm
-from matplotlib.patches import Patch
 from matplotlib.animation import FuncAnimation
 from IPython.display import HTML
 
