@@ -53,3 +53,33 @@ def build_table(pairs, help=False):
 
     table = count / row_totals
     return table
+
+
+
+def apply_table(pgs, table, rng=None, help=False):
+    if help:
+        print("""
+        apply_table() parameters:
+        pgs   : 2D numpy array of integers 0, 1, 2 (the input PGS field)
+        table : (81, 3) probability array from build_table()
+        rng   : numpy random Generator for reproducibility (optional)
+
+        Returns a 2D array the same shape as pgs where each cell
+        has been assigned a state sampled from the table row
+        corresponding to its neighbourhood pattern.
+        """)
+        return
+
+    if rng is None:
+        rng = np.random.default_rng()
+
+    rows, cols = pgs.shape
+    output = np.zeros((rows, cols), dtype=int)
+
+    for i in range(rows):
+        for j in range(cols):
+            pattern_id = encode_neighbourhood(pgs, i, j)
+            probs = table[pattern_id]
+            output[i, j] = rng.choice(3, p=probs)
+
+    return output
