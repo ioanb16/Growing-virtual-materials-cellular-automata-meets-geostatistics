@@ -83,3 +83,43 @@ def apply_table(pgs, table, rng=None, help=False):
             output[i, j] = rng.choice(3, p=probs)
 
     return output
+
+
+
+def sequential_simulate(table, shape, proportions=None, rng=None, help=False):
+    if help:
+        print("""
+        sequential_simulate() parameters:
+        table       : (81, 3) probability array from build_table()
+        shape       : tuple (rows, cols) for the output grid
+        proportions : list [p0, p1, p2] for random initialisation
+                      defaults to [1/3, 1/3, 1/3]
+        rng         : numpy random Generator (optional)
+        """)
+        return
+
+    if rng is None:
+        rng = np.random.default_rng()
+    if proportions is None:
+        proportions = [1/3, 1/3, 1/3]
+
+    rows, cols = shape
+
+    # initialise randomly with correct proportions
+    grid = rng.choice(3, size=(rows, cols), p=proportions)
+
+    # refine sequentially
+    order = [(i, j) for i in range(rows) for j in range(cols)]
+    rng.shuffle(order)
+
+    for i, j in order:
+        n = int(grid[i-1, j]) if i > 0        else 0
+        s = int(grid[i+1, j]) if i < rows - 1 else 0
+        e = int(grid[i, j+1]) if j < cols - 1 else 0
+        w = int(grid[i, j-1]) if j > 0        else 0
+
+        pattern_id = n * 27 + s * 9 + e * 3 + w
+        probs = table[pattern_id]
+        grid[i, j] = rng.choice(3, p=probs)
+
+    return grid
