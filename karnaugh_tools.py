@@ -9,49 +9,63 @@ def encode_neighbourhood(grid, i, j, help=False):
         j    : column index of the centre cell
 
         Returns an integer 0-80 uniquely identifying the
-        4-neighbour pattern (N, S, E, W) using fixed boundaries
-        (missing neighbours treated as state 0).
+        4-neighbour (von Neumann) pattern (N, S, E, W) using
+        fixed boundaries (missing neighbours treated as state 0).
         """)
         return
 
     rows, cols = grid.shape
-    n = int(grid[i-1, j]) if i > 0          else 0
-    s = int(grid[i+1, j]) if i < rows - 1   else 0
-    e = int(grid[i, j+1]) if j < cols - 1   else 0
-    w = int(grid[i, j-1]) if j > 0          else 0
+    n = int(grid[i-1, j]) if i > 0        else 0
+    s = int(grid[i+1, j]) if i < rows - 1 else 0
+    e = int(grid[i, j+1]) if j < cols - 1 else 0
+    w = int(grid[i, j-1]) if j > 0        else 0
 
     return n * 27 + s * 9 + e * 3 + w
 
 
-def build_table(pairs, help=False):
+def build_table(pairs, neighbourhood='von_neumann', help=False):
     if help:
         print("""
         build_table() parameters:
-        pairs : list of (pgs_field, target_field) tuples
-                both must be 2D numpy arrays of integers 0, 1, or 2
-                and the same shape
+        pairs        : list of (pgs_field, target_field) tuples
+                       both must be 2D numpy arrays of integers 0, 1, or 2
+                       and the same shape
+        neighbourhood: 'von_neumann' (4 neighbours, 81 patterns)  [default]
+                       'moore'       (8 neighbours, 6561 patterns)
 
-        Returns a (81, 3) numpy array where
+        Returns a (81, 3) or (6561, 3) numpy array where
         table[pattern_id, state] = P(output state | neighbourhood pattern)
         """)
         return
 
-    count = np.zeros((81, 3), dtype=int)
+    if neighbourhood == 'moore':
+        n_patterns = 6561
+    else:
+        n_patterns = 81
+
+    count = np.zeros((n_patterns, 3), dtype=int)
 
     for pgs, target in pairs:
         rows, cols = pgs.shape
-
         padded = np.pad(pgs, pad_width=1, mode='constant', constant_values=0)
 
-        n = padded[0:rows,   1:cols+1].astype(int)
-        s = padded[2:rows+2, 1:cols+1].astype(int)
-        e = padded[1:rows+1, 2:cols+2].astype(int)
-        w = padded[1:rows+1, 0:cols  ].astype(int)
+        n  = padded[0:rows,   1:cols+1].astype(int)
+        s  = padded[2:rows+2, 1:cols+1].astype(int)
+        e  = padded[1:rows+1, 2:cols+2].astype(int)
+        w  = padded[1:rows+1, 0:cols  ].astype(int)
 
-        pattern_ids = n * 27 + s * 9 + e * 3 + w
+        if neighbourhood == 'moore':
+            ne = padded[0:rows,   2:cols+2].astype(int)
+            nw = padded[0:rows,   0:cols  ].astype(int)
+            se = padded[2:rows+2, 2:cols+2].astype(int)
+            sw = padded[2:rows+2, 0:cols  ].astype(int)
+            pattern_ids = (n*2187 + s*729 + e*243 + w*81 +
+                           ne*27  + nw*9  + se*3  + sw)
+        else:
+            pattern_ids = n*27 + s*9 + e*3 + w
 
         linear_idx = pattern_ids.ravel() * 3 + target.ravel().astype(int)
-        count += np.bincount(linear_idx, minlength=243).reshape(81, 3)
+        count += np.bincount(linear_idx, minlength=n_patterns*3).reshape(n_patterns, 3)
 
     row_totals = count.sum(axis=1, keepdims=True)
     row_totals[row_totals == 0] = 1
@@ -64,7 +78,7 @@ def apply_table(pgs, table, rng=None, help=False):
         print("""
         apply_table() parameters:
         pgs   : 2D numpy array of integers 0, 1, 2 (the input PGS field)
-        table : (81, 3) probability array from build_table()
+        table : (81, 3) or (6561, 3) probability array from build_table()
         rng   : numpy random Generator for reproducibility (optional)
 
         Returns a 2D array the same shape as pgs where each cell
@@ -92,7 +106,8 @@ def sequential_simulate(table, shape, proportions=None, n_passes=10, improvement
     if help:
         print("""
         sequential_simulate() parameters:
-        table           : (81, 3) probability array from build_table()
+        table           : (81, 3) or (6561, 3) probability array from build_table()
+                          neighbourhood type is inferred from table shape
         shape           : tuple (rows, cols) for the output grid
         proportions     : list [p0, p1, p2] — used both for random
                           initialisation AND as proportion conditioning
@@ -113,6 +128,7 @@ def sequential_simulate(table, shape, proportions=None, n_passes=10, improvement
     if proportions is None:
         proportions = [1/3, 1/3, 1/3]
 
+    use_moore = (table.shape[0] == 6561)
     target_props = np.array(proportions, dtype=float)
     rows, cols = shape
     grid = rng.choice(3, size=(rows, cols), p=target_props)
@@ -133,11 +149,24 @@ def sequential_simulate(table, shape, proportions=None, n_passes=10, improvement
             s = int(grid[i+1, j]) if i < rows - 1 else 0
             e = int(grid[i, j+1]) if j < cols - 1 else 0
             w = int(grid[i, j-1]) if j > 0        else 0
-            pattern_id = n * 27 + s * 9 + e * 3 + w
+
+            if use_moore:
+                ne = int(grid[i-1, j+1]) if i > 0 and j < cols-1      else 0
+                nw = int(grid[i-1, j-1]) if i > 0 and j > 0            else 0
+                se = int(grid[i+1, j+1]) if i < rows-1 and j < cols-1  else 0
+                sw = int(grid[i+1, j-1]) if i < rows-1 and j > 0       else 0
+                pattern_id = (n*2187 + s*729 + e*243 + w*81 +
+                              ne*27  + nw*9  + se*3  + sw)
+            else:
+                pattern_id = n*27 + s*9 + e*3 + w
 
             correction = target_props / np.clip(current_props, 1e-6, None)
             probs = table[pattern_id] * correction
-            probs = probs / probs.sum()
+            total = probs.sum()
+            if total == 0:
+                probs = target_props.copy()
+            else:
+                probs = probs / total
 
             new_state = rng.choice(3, p=probs)
 
