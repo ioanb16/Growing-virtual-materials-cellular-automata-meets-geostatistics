@@ -86,15 +86,23 @@ def apply_table(pgs, table, rng=None, help=False):
 
 
 
-def sequential_simulate(table, shape, proportions=None, n_passes=3, rng=None, help=False):
+def sequential_simulate(table, shape, proportions=None, n_passes=10, improvement_tol=0.005, rng=None, help=False):
     if help:
         print("""
         sequential_simulate() parameters:
-        table       : (81, 3) probability array from build_table()
-        shape       : tuple (rows, cols) for the output grid
-        proportions : list [p0, p1, p2] for random initialisation
-        n_passes    : number of refinement passes (default 3)
-        rng         : numpy random Generator (optional)
+        table           : (81, 3) probability array from build_table()
+        shape           : tuple (rows, cols) for the output grid
+        proportions     : list [p0, p1, p2] — used both for random
+                          initialisation AND as proportion conditioning
+                          targets during sampling (default: uniform)
+        n_passes        : maximum number of refinement passes (default 10)
+        improvement_tol : stop early if the drop in change-fraction between
+                          consecutive passes falls below this value (default 0.005)
+        rng             : numpy random Generator (optional)
+
+        Returns (grid, history) where
+          grid    : final 2D array of shape `shape`
+          history : list of per-pass change fractions (length = passes run)
         """)
         return
 
@@ -103,18 +111,50 @@ def sequential_simulate(table, shape, proportions=None, n_passes=3, rng=None, he
     if proportions is None:
         proportions = [1/3, 1/3, 1/3]
 
+    target_props = np.array(proportions, dtype=float)
     rows, cols = shape
-    grid = rng.choice(3, size=(rows, cols), p=proportions)
+    grid = rng.choice(3, size=(rows, cols), p=target_props)
 
-    for _ in range(n_passes):
+    history = []
+
+    for pass_num in range(n_passes):
+        prev = grid.copy()
+
+        # Current proportions for conditioning
+        counts = np.bincount(grid.ravel(), minlength=3).astype(float)
+        current_props = counts / counts.sum()
+
         order = [(i, j) for i in range(rows) for j in range(cols)]
         rng.shuffle(order)
+
         for i, j in order:
             n = int(grid[i-1, j]) if i > 0        else 0
             s = int(grid[i+1, j]) if i < rows - 1 else 0
             e = int(grid[i, j+1]) if j < cols - 1 else 0
             w = int(grid[i, j-1]) if j > 0        else 0
             pattern_id = n * 27 + s * 9 + e * 3 + w
-            grid[i, j] = rng.choice(3, p=table[pattern_id])
 
-    return grid
+            # Proportion conditioning: boost under-represented phases
+            correction = target_props / np.clip(current_props, 1e-6, None)
+            probs = table[pattern_id] * correction
+            probs = probs / probs.sum()
+
+            new_state = rng.choice(3, p=probs)
+
+            # Update running proportion counts
+            current_props[grid[i, j]] -= 1 / (rows * cols)
+            current_props[new_state]   += 1 / (rows * cols)
+            current_props = np.clip(current_props, 0, None)
+
+            grid[i, j] = new_state
+
+        delta = np.mean(grid != prev)
+        history.append(delta)
+
+        if pass_num > 0 and (history[-2] - history[-1]) < improvement_tol:
+            print(f"Converged after {pass_num + 1} pass(es)  (improvement = {history[-2]-history[-1]:.4f} < {improvement_tol})")
+            break
+    else:
+        print(f"Reached max passes ({n_passes})  (final δ = {history[-1]:.4f})")
+
+    return grid, history
