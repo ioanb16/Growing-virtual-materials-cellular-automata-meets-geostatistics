@@ -23,7 +23,6 @@ def encode_neighbourhood(grid, i, j, help=False):
     return n * 27 + s * 9 + e * 3 + w
 
 
-
 def build_table(pairs, help=False):
     if help:
         print("""
@@ -41,19 +40,23 @@ def build_table(pairs, help=False):
 
     for pgs, target in pairs:
         rows, cols = pgs.shape
-        for i in range(rows):
-            for j in range(cols):
-                pattern_id = encode_neighbourhood(pgs, i, j)
-                output_state = int(target[i, j])
-                count[pattern_id, output_state] += 1
 
-    # avoid division by zero for patterns that never appeared
+        padded = np.pad(pgs, pad_width=1, mode='constant', constant_values=0)
+
+        n = padded[0:rows,   1:cols+1].astype(int)
+        s = padded[2:rows+2, 1:cols+1].astype(int)
+        e = padded[1:rows+1, 2:cols+2].astype(int)
+        w = padded[1:rows+1, 0:cols  ].astype(int)
+
+        pattern_ids = n * 27 + s * 9 + e * 3 + w
+
+        linear_idx = pattern_ids.ravel() * 3 + target.ravel().astype(int)
+        count += np.bincount(linear_idx, minlength=243).reshape(81, 3)
+
     row_totals = count.sum(axis=1, keepdims=True)
     row_totals[row_totals == 0] = 1
-
     table = count / row_totals
     return table
-
 
 
 def apply_table(pgs, table, rng=None, help=False):
@@ -83,7 +86,6 @@ def apply_table(pgs, table, rng=None, help=False):
             output[i, j] = rng.choice(3, p=probs)
 
     return output
-
 
 
 def sequential_simulate(table, shape, proportions=None, n_passes=10, improvement_tol=0.005, rng=None, help=False):
@@ -120,7 +122,6 @@ def sequential_simulate(table, shape, proportions=None, n_passes=10, improvement
     for pass_num in range(n_passes):
         prev = grid.copy()
 
-        # Current proportions for conditioning
         counts = np.bincount(grid.ravel(), minlength=3).astype(float)
         current_props = counts / counts.sum()
 
@@ -134,14 +135,12 @@ def sequential_simulate(table, shape, proportions=None, n_passes=10, improvement
             w = int(grid[i, j-1]) if j > 0        else 0
             pattern_id = n * 27 + s * 9 + e * 3 + w
 
-            # Proportion conditioning: boost under-represented phases
             correction = target_props / np.clip(current_props, 1e-6, None)
             probs = table[pattern_id] * correction
             probs = probs / probs.sum()
 
             new_state = rng.choice(3, p=probs)
 
-            # Update running proportion counts
             current_props[grid[i, j]] -= 1 / (rows * cols)
             current_props[new_state]   += 1 / (rows * cols)
             current_props = np.clip(current_props, 0, None)
