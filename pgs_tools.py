@@ -6,8 +6,8 @@ from matplotlib.patches import Patch
 
 def make_gaussian_fields(
     grid_size=100,
-    var_1=1, len_scale_1=[30, 30], angles_1=[0, 0], seed_1=0,
-    var_2=1, len_scale_2=[20, 20], angles_2=[0, 0],   seed_2=1,
+    var_1=1, len_scale_1=[30, 30], angles_1=[0, 0],          seed_1=0,
+    var_2=1, len_scale_2=[20, 20], angles_2=[np.pi/4, np.pi/4], seed_2=1,
     help=False
 ):
     if help:
@@ -22,7 +22,7 @@ def make_gaussian_fields(
         seed_1      : random seed for field 1 (default 0)
         var_2       : variance of field 2 (default 1) — same note as var_1
         len_scale_2 : correlation length of field 2 (default [20, 20])
-        angles_2    : orientation of field 2 in radians (default [0, 0])
+        angles_2    : orientation of field 2 in radians (default [pi/4, pi/4])
         seed_2      : random seed for field 2 (default 1)
 
         Returns (field_1, field_2) as 2D numpy arrays of shape (grid_size, grid_size)
