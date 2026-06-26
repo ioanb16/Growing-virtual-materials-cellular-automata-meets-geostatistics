@@ -186,3 +186,56 @@ def sequential_simulate(table, shape, proportions=None, n_passes=10, improvement
         print(f"Reached max passes ({n_passes})  (final δ = {history[-1]:.4f})")
 
     return grid, history
+
+
+from scipy.ndimage import label as _label
+
+def compute_morphology(grid, help=False):
+    if help:
+        print("""
+        compute_morphology() parameters:
+        grid : 2D numpy array of integers 0, 1, 2
+
+        Returns a dict keyed by phase (0, 1, 2), each containing:
+            proportion    : fraction of grid occupied by this phase
+            n_components  : number of connected components (blobs)
+            mean_area     : mean blob area in pixels
+            largest_area  : largest blob area in pixels
+            mean_diameter : mean equivalent circular diameter (pixels)
+                            d = 2 * sqrt(area / pi)
+            percolates    : bool — does any blob span top row to bottom row?
+        """)
+        return
+
+    metrics = {}
+    rows, cols = grid.shape
+
+    for phase in range(3):
+        mask = (grid == phase)
+        labeled, n = _label(mask)
+
+        if n == 0:
+            metrics[phase] = dict(proportion=0.0, n_components=0,
+                                  mean_area=0.0, largest_area=0,
+                                  mean_diameter=0.0, percolates=False)
+            continue
+
+        areas = np.array([np.sum(labeled == k) for k in range(1, n + 1)])
+
+        percolates = any(
+            (labeled == k)[0, :].any() and (labeled == k)[-1, :].any()
+            for k in range(1, n + 1)
+        )
+
+        mean_area = areas.mean()
+
+        metrics[phase] = dict(
+            proportion    = float(mask.mean()),
+            n_components  = n,
+            mean_area     = float(mean_area),
+            largest_area  = int(areas.max()),
+            mean_diameter = float(2 * np.sqrt(mean_area / np.pi)),
+            percolates    = percolates,
+        )
+
+    return metrics
