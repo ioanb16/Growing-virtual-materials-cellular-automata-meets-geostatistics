@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.ndimage import label as _label
 
 def encode_neighbourhood(grid, i, j, help=False):
     if help:
@@ -188,7 +189,6 @@ def sequential_simulate(table, shape, proportions=None, n_passes=10, improvement
     return grid, history
 
 
-from scipy.ndimage import label as _label
 
 def compute_morphology(grid, help=False):
     if help:
