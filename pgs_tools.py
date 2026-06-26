@@ -45,22 +45,28 @@ def make_lithotype_map(
     if help:
         print("""
         make_lithotype_map() parameters:
-        field_1      : first Gaussian field (from make_gaussian_fields)
-        field_2      : second Gaussian field (from make_gaussian_fields)
-        Mat1         : proportion of material 1 (default 0.20)
-        Mat2         : proportion of material 2 (default 0.50)
-        Mat3         : proportion of material 3 (default 0.30)
-        note         : proportions must sum to 1.0
+        field_1 : first Gaussian field (from make_gaussian_fields)
+        field_2 : second Gaussian field (from make_gaussian_fields)
+        Mat1    : proportion of material 1 (default 0.20)
+        Mat2    : proportion of material 2 (default 0.50)
+        Mat3    : proportion of material 3 (default 0.30)
+        note    : proportions must sum to 1.0
+                  thresholds use conditional empirical quantiles so
+                  output proportions match targets exactly
         """)
         return
-    cut_1 = norm.ppf(Mat1)
-    cut_2 = norm.ppf(Mat2 / (Mat3 + Mat2))
-    size = field_1.shape[0]
-    lithotype_map = np.zeros((size, size))
-    lithotype_map[(field_1 >= cut_1) & (field_2 < cut_2)] = 1
-    lithotype_map[(field_1 >= cut_1) & (field_2 >= cut_2)] = 2
-    return lithotype_map
 
+    f1 = field_1.ravel()
+    f2 = field_2.ravel()
+
+    t1 = np.quantile(f1, Mat1)
+    t2 = np.quantile(f2[f1 >= t1], Mat2 / (Mat2 + Mat3))
+
+    lithotype_map = np.zeros(f1.shape[0], dtype=int)
+    lithotype_map[(f1 >= t1) & (f2 < t2)] = 1
+    lithotype_map[(f1 >= t1) & (f2 >= t2)] = 2
+
+    return lithotype_map.reshape(field_1.shape)
 
 
 
