@@ -118,7 +118,8 @@ def apply_table(pgs, table, rng=None, help=False):
 
 
 def sequential_simulate(table, shape, proportions=None, n_passes=10,
-                        improvement_tol=0.005, rng=None, help=False):
+                        improvement_tol=0.005, rng=None,
+                        initial_grid=None, track_phase=None, help=False):
     if help:
         print("""
         sequential_simulate() parameters:
@@ -132,10 +133,20 @@ def sequential_simulate(table, shape, proportions=None, n_passes=10,
         improvement_tol : stop early if the drop in change-fraction between
                           consecutive passes falls below this value (default 0.005)
         rng             : numpy random Generator (optional)
+        initial_grid    : optional 2D integer array (states 0/1/2) used as the
+                          starting grid instead of an i.i.d. random draw.
+                          Must match `shape`. This is how a PGS-generated field
+                          is injected so the table only does local refinement.
+        track_phase     : optional int (0, 1, or 2). If given, compute_morphology
+                          is evaluated on that phase after the initial grid and
+                          after every pass, and the records are returned as a
+                          third output `trace` (index 0 = initial grid,
+                          index k = after pass k).
 
         Returns (grid, history) where
           grid    : final 2D array of shape `shape`
           history : list of per-pass change fractions (length = passes run)
+        or (grid, history, trace) if track_phase is set.
         """)
         return
 
@@ -147,9 +158,19 @@ def sequential_simulate(table, shape, proportions=None, n_passes=10,
     use_moore    = (table.shape[0] == 6561)
     target_props = np.array(proportions, dtype=float)
     rows, cols   = shape
-    grid         = rng.choice(3, size=(rows, cols), p=target_props)
+
+    if initial_grid is not None:
+        if initial_grid.shape != (rows, cols):
+            raise ValueError(f"initial_grid shape {initial_grid.shape} "
+                             f"does not match requested shape {(rows, cols)}")
+        grid = initial_grid.astype(int).copy()
+    else:
+        grid = rng.choice(3, size=(rows, cols), p=target_props)
 
     history = []
+    trace   = []
+    if track_phase is not None:
+        trace.append(compute_morphology(grid)[track_phase])
 
     for pass_num in range(n_passes):
         prev = grid.copy()
@@ -193,6 +214,8 @@ def sequential_simulate(table, shape, proportions=None, n_passes=10,
 
         delta = np.mean(grid != prev)
         history.append(delta)
+        if track_phase is not None:
+            trace.append(compute_morphology(grid)[track_phase])
 
         if pass_num > 0 and (history[-2] - history[-1]) < improvement_tol:
             print(f"Converged after {pass_num + 1} pass(es)  (improvement = {history[-2]-history[-1]:.4f} < {improvement_tol})")
@@ -200,6 +223,8 @@ def sequential_simulate(table, shape, proportions=None, n_passes=10,
     else:
         print(f"Reached max passes ({n_passes})  (final δ = {history[-1]:.4f})")
 
+    if track_phase is not None:
+        return grid, history, trace
     return grid, history
 
 
