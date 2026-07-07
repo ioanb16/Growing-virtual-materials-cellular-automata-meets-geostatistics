@@ -110,7 +110,7 @@ def estimate_anisotropy(
                               bin_edges, corrected=True)
     perp_theta = (alpha_star + np.pi / 2) % np.pi
     L_minor_star = _fit_range(B, perp_theta, final_sampling_size, sampling_seed,
-                              bin_edges, corrected=False)
+                              bin_edges, corrected=True)
 
     return (alpha_star, L_major_star, L_minor_star,
             coarse_angles, coarse_ranges, fine_angles, fine_ranges)
@@ -248,7 +248,7 @@ def estimate_anisotropy_masked(
     perp_theta = (alpha_star + np.pi / 2) % np.pi
     L_minor_star = _fit_range_masked(values, pos, p, perp_theta,
                                      final_sampling_size, sampling_seed,
-                                     bin_edges, corrected=False)
+                                     bin_edges, corrected=True)
     return alpha_star, L_major_star, L_minor_star
 
 
