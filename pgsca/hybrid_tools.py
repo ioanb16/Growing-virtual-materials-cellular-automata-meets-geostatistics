@@ -296,7 +296,7 @@ def recover_plurigaussian(real_map, sampling_seed=1, help=False, **kwargs):
     mask = real_map != 0
     I2 = (real_map == 2).astype(int)
     a2, L2maj, L2min = estimate_anisotropy_masked(
-        I2, mask, sampling_seed=sampling_seed)
+        I2, mask, sampling_seed=sampling_seed, **kwargs)
 
     return dict(proportions=props.tolist(), cut_1=float(cut_1),
                 cut_2=float(cut_2),

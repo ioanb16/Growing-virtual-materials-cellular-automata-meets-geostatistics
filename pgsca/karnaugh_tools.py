@@ -226,7 +226,9 @@ def sequential_simulate(table, shape, proportions=None, n_passes=10,
             trace.append(compute_morphology(grid)[track_phase])
 
         if pass_num > 0 and (history[-2] - history[-1]) < improvement_tol:
-            print(f"Converged after {pass_num + 1} pass(es)  (improvement = {history[-2]-history[-1]:.4f} < {improvement_tol})")
+            improvement = history[-2] - history[-1]
+            label = "Converged" if improvement >= 0 else "Stopped (no further improvement)"
+            print(f"{label} after {pass_num + 1} pass(es)  (improvement = {improvement:.4f} < {improvement_tol})")
             break
     else:
         print(f"Reached max passes ({n_passes})  (final δ = {history[-1]:.4f})")
@@ -266,7 +268,7 @@ def compute_morphology(grid, help=False):
                                   mean_diameter=0.0, percolates=False)
             continue
 
-        areas = np.array([np.sum(labeled == k) for k in range(1, n + 1)])
+        areas = np.bincount(labeled.ravel())[1:]   # component areas (skip background label 0)
 
         percolates = any(
             (labeled == k)[0, :].any() and (labeled == k)[-1, :].any()
