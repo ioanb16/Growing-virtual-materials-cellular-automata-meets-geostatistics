@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pgsca"
+version = "0.1.0"
+description = "Plurigaussian Simulation + Karnaugh-map Cellular Automata for growing synthetic microstructures"
+requires-python = ">=3.9"
+dependencies = ["numpy", "scipy", "gstools", "matplotlib", "tifffile"]
+
+[tool.setuptools]
+packages = ["pgsca"]
