@@ -83,6 +83,8 @@ def apply_table(pgs, table, rng=None, help=False):
 
         Applies the table to every cell in one vectorised pass.
         Neighbourhood type is inferred from table shape.
+        Cells whose neighbourhood pattern was never seen in training
+        (all-zero table row) are held at their input value.
         Returns a 2D array the same shape as pgs.
         """)
         return
@@ -113,6 +115,12 @@ def apply_table(pgs, table, rng=None, help=False):
     cumprobs = np.cumsum(probs, axis=1)
     r        = rng.random(rows * cols)[:, np.newaxis]
     output   = (r > cumprobs).sum(axis=1).reshape(rows, cols).astype(int)
+
+    # Unseen patterns have an all-zero table row (no training data). Leaving
+    # them to the sampler yields the invalid state 3, so hold those cells at
+    # their input value instead (a no-op refinement where the table is silent).
+    unseen = (probs.sum(axis=1) == 0).reshape(rows, cols)
+    output[unseen] = pgs[unseen].astype(int)
 
     return output
 
