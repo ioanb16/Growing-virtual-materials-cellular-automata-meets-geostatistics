@@ -1,9 +1,10 @@
 """Validate the full recovery + combination pipeline against ThreePhase.tif.
 
-Closes Definition-of-Done item 3 (one real material). Run from the repo root:
-    python validate_realdata.py
-Expected (seed-fixed): combined-Moore phase 0 near prop 0.375, 120 components,
-mean area 205, no percolation, vs real slice 0.370 / 137 / 177 / no perc.
+Recovers PGS parameters from one real slice, builds a Moore K-map from spread-out
+slices, seeds with the recovered parameters, refines, and prints a morphology
+comparison (proportion / components / mean area / largest / percolation) for
+real vs. PGS-seed vs. combined, per phase. Run from the repo root:
+    python scripts/validate_realdata.py
 """
 import sys
 from pathlib import Path
