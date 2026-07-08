@@ -4,8 +4,8 @@ hybrid_tools.py -- as per Appendix C of the handoff document.
 import numpy as np
 import gstools as gs
 
-from pgs_tools import make_gaussian_fields
-from karnaugh_tools import build_table, apply_table, sequential_simulate, compute_morphology
+from .pgs_tools import make_gaussian_fields
+from .karnaugh_tools import build_table, apply_table, sequential_simulate, compute_morphology
 
 
 def _corrected_gamma(B, theta, sampling_size, sampling_seed, bin_edges):
@@ -137,7 +137,7 @@ def make_pgs_seed(shape, params_1, params_2, proportions,
         Returns a 2D integer array of states 0/1/2.
         """)
         return
-    from pgs_tools import make_lithotype_map
+    from .pgs_tools import make_lithotype_map
     rows, cols = shape
     assert rows == cols, "pgs_tools generates square grids"
     a1, Lmaj1, Lmin1 = params_1
