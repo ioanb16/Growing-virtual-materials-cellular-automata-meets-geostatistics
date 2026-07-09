@@ -1,48 +1,26 @@
 import numpy as np
 from scipy.ndimage import label as _label
 
-
-def encode_neighbourhood(grid, i, j, help=False):
-    if help:
-        print("""
-        encode_neighbourhood() parameters:
-        grid : 2D numpy array of integer states (0, 1, or 2)
-        i    : row index of the centre cell
-        j    : column index of the centre cell
-
-        Returns an integer 0-80 uniquely identifying the
-        4-neighbour (von Neumann) pattern (N, S, E, W) using
-        fixed boundaries (missing neighbours treated as state 0).
-
-        Note: used externally for inspection. Internal functions
-        inline the encoding directly for performance.
-        """)
-        return
-
+def encode_neighbourhood(grid, i, j):
+    """
+    Returns an integer 0-80 uniquely identifying the 4-neighbour (von Neumann) 
+    pattern (N, S, E, W) using a base-3 encoding system.
+    """
     rows, cols = grid.shape
     n = int(grid[i-1, j]) if i > 0        else 0
     s = int(grid[i+1, j]) if i < rows - 1 else 0
     e = int(grid[i, j+1]) if j < cols - 1 else 0
     w = int(grid[i, j-1]) if j > 0        else 0
 
+    # Base-3 encoding for 3 possible states (0, 1, 2)
     return n * 27 + s * 9 + e * 3 + w
 
 
-def build_table(pairs, neighbourhood='von_neumann', help=False):
-    if help:
-        print("""
-        build_table() parameters:
-        pairs        : list of (pgs_field, target_field) tuples
-                       both must be 2D numpy arrays of integers 0, 1, or 2
-                       and the same shape
-        neighbourhood: 'von_neumann' (4 neighbours, 81 patterns)  [default]
-                       'moore'       (8 neighbours, 6561 patterns)
-
-        Returns a (81, 3) or (6561, 3) numpy array where
-        table[pattern_id, state] = P(output state | neighbourhood pattern)
-        """)
-        return
-
+def build_table(pairs, neighbourhood='von_neumann'):
+    """
+    Builds a probability table from training data.
+    table[pattern_id, state] = P(output state | neighbourhood pattern)
+    """
     n_patterns = 6561 if neighbourhood == 'moore' else 81
     count = np.zeros((n_patterns, 3), dtype=int)
 
@@ -60,8 +38,7 @@ def build_table(pairs, neighbourhood='von_neumann', help=False):
             nw = padded[0:rows,   0:cols  ].astype(int)
             se = padded[2:rows+2, 2:cols+2].astype(int)
             sw = padded[2:rows+2, 0:cols  ].astype(int)
-            pattern_ids = (n*2187 + s*729 + e*243 + w*81 +
-                           ne*27  + nw*9  + se*3  + sw)
+            pattern_ids = (n*2187 + s*729 + e*243 + w*81 + ne*27 + nw*9 + se*3 + sw)
         else:
             pattern_ids = n*27 + s*9 + e*3 + w
 
@@ -73,22 +50,8 @@ def build_table(pairs, neighbourhood='von_neumann', help=False):
     return count / row_totals
 
 
-def apply_table(pgs, table, rng=None, help=False):
-    if help:
-        print("""
-        apply_table() parameters:
-        pgs   : 2D numpy array of integers 0, 1, 2 (the input field)
-        table : (81, 3) or (6561, 3) probability array from build_table()
-        rng   : numpy random Generator for reproducibility (optional)
-
-        Applies the table to every cell in one vectorised pass.
-        Neighbourhood type is inferred from table shape.
-        Cells whose neighbourhood pattern was never seen in training
-        (all-zero table row) are held at their input value.
-        Returns a 2D array the same shape as pgs.
-        """)
-        return
-
+def apply_table(pgs, table, rng=None):
+    """Applies the Karnaugh map table to every cell in one vectorised pass."""
     if rng is None:
         rng = np.random.default_rng()
 
@@ -106,8 +69,7 @@ def apply_table(pgs, table, rng=None, help=False):
         nw = padded[0:rows,   0:cols  ].astype(int)
         se = padded[2:rows+2, 2:cols+2].astype(int)
         sw = padded[2:rows+2, 0:cols  ].astype(int)
-        pattern_ids = (n*2187 + s*729 + e*243 + w*81 +
-                       ne*27  + nw*9  + se*3  + sw)
+        pattern_ids = (n*2187 + s*729 + e*243 + w*81 + ne*27 + nw*9 + se*3 + sw)
     else:
         pattern_ids = n*27 + s*9 + e*3 + w
 
@@ -116,9 +78,6 @@ def apply_table(pgs, table, rng=None, help=False):
     r        = rng.random(rows * cols)[:, np.newaxis]
     output   = (r > cumprobs).sum(axis=1).reshape(rows, cols).astype(int)
 
-    # Unseen patterns have an all-zero table row (no training data). Leaving
-    # them to the sampler yields the invalid state 3, so hold those cells at
-    # their input value instead (a no-op refinement where the table is silent).
     unseen = (probs.sum(axis=1) == 0).reshape(rows, cols)
     output[unseen] = pgs[unseen].astype(int)
 
@@ -127,50 +86,23 @@ def apply_table(pgs, table, rng=None, help=False):
 
 def sequential_simulate(table, shape, proportions=None, n_passes=10,
                         improvement_tol=0.005, rng=None,
-                        initial_grid=None, track_phase=None, help=False):
-    if help:
-        print("""
-        sequential_simulate() parameters:
-        table           : (81, 3) or (6561, 3) probability array from build_table()
-                          neighbourhood type is inferred from table shape
-        shape           : tuple (rows, cols) for the output grid
-        proportions     : list [p0, p1, p2] — used both for random
-                          initialisation AND as proportion conditioning
-                          targets during sampling (default: uniform)
-        n_passes        : maximum number of refinement passes (default 10)
-        improvement_tol : stop early if the drop in change-fraction between
-                          consecutive passes falls below this value (default 0.005)
-        rng             : numpy random Generator (optional)
-        initial_grid    : optional 2D integer array (states 0/1/2) used as the
-                          starting grid instead of an i.i.d. random draw.
-                          Must match `shape`. This is how a PGS-generated field
-                          is injected so the table only does local refinement.
-        track_phase     : optional int (0, 1, or 2). If given, compute_morphology
-                          is evaluated on that phase after the initial grid and
-                          after every pass, and the records are returned as a
-                          third output `trace` (index 0 = initial grid,
-                          index k = after pass k).
-
-        Returns (grid, history) where
-          grid    : final 2D array of shape `shape`
-          history : list of per-pass change fractions (length = passes run)
-        or (grid, history, trace) if track_phase is set.
-        """)
-        return
-
+                        initial_grid=None, track_phase=None):
+    """
+    Iteratively refines a grid using Sequential Indicator Simulation principles.
+    Note: For very large grids, wrapping the inner loop with Numba @njit is recommended.
+    """
     if rng is None:
         rng = np.random.default_rng()
     if proportions is None:
         proportions = [1/3, 1/3, 1/3]
 
-    use_moore    = (table.shape[0] == 6561)
+    use_moore = (table.shape[0] == 6561)
     target_props = np.array(proportions, dtype=float)
-    rows, cols   = shape
+    rows, cols = shape
 
     if initial_grid is not None:
         if initial_grid.shape != (rows, cols):
-            raise ValueError(f"initial_grid shape {initial_grid.shape} "
-                             f"does not match requested shape {(rows, cols)}")
+            raise ValueError(f"initial_grid shape {initial_grid.shape} does not match requested shape {(rows, cols)}")
         grid = initial_grid.astype(int).copy()
     else:
         grid = rng.choice(3, size=(rows, cols), p=target_props)
@@ -183,7 +115,7 @@ def sequential_simulate(table, shape, proportions=None, n_passes=10,
     for pass_num in range(n_passes):
         prev = grid.copy()
 
-        counts        = np.bincount(grid.ravel(), minlength=3).astype(float)
+        counts = np.bincount(grid.ravel(), minlength=3).astype(float)
         current_props = counts / counts.sum()
 
         order = np.arange(rows * cols)
@@ -202,12 +134,12 @@ def sequential_simulate(table, shape, proportions=None, n_passes=10,
                 nw = int(grid[i-1, j-1]) if i > 0 and j > 0           else 0
                 se = int(grid[i+1, j+1]) if i < rows-1 and j < cols-1 else 0
                 sw = int(grid[i+1, j-1]) if i < rows-1 and j > 0      else 0
-                pattern_id = (n*2187 + s*729 + e*243 + w*81 +
-                              ne*27  + nw*9  + se*3  + sw)
+                pattern_id = (n*2187 + s*729 + e*243 + w*81 + ne*27 + nw*9 + se*3 + sw)
             else:
                 pattern_id = n*27 + s*9 + e*3 + w
 
-            correction = target_props / np.clip(current_props, 1e-6, None)
+            # Smooth correction avoids astronomical multiplier spikes if a phase hits 0
+            correction = target_props / (current_props + 1e-5)
             probs      = table[pattern_id] * correction
             total      = probs.sum()
             probs      = target_props.copy() if total == 0 else probs / total
@@ -238,37 +170,24 @@ def sequential_simulate(table, shape, proportions=None, n_passes=10,
     return grid, history
 
 
-def compute_morphology(grid, help=False):
-    if help:
-        print("""
-        compute_morphology() parameters:
-        grid : 2D numpy array of integers 0, 1, 2
-
-        Returns a dict keyed by phase (0, 1, 2), each containing:
-            proportion    : fraction of grid occupied by this phase
-            n_components  : number of connected components (blobs)
-            mean_area     : mean blob area in pixels
-            largest_area  : largest blob area in pixels
-            mean_diameter : mean equivalent circular diameter (pixels)
-                            d = 2 * sqrt(area / pi)
-            percolates    : bool — does any blob span top row to bottom row?
-        """)
-        return
-
+def compute_morphology(grid):
+    """
+    Computes spatial metrics for the phases in the grid.
+    Returns a dict keyed by phase (0, 1, 2) containing proportions, areas, and percolation state.
+    """
     metrics = {}
     rows, cols = grid.shape
 
     for phase in range(3):
-        mask          = (grid == phase)
-        labeled, n    = _label(mask)
+        mask       = (grid == phase)
+        labeled, n = _label(mask)
 
         if n == 0:
-            metrics[phase] = dict(proportion=0.0, n_components=0,
-                                  mean_area=0.0, largest_area=0,
-                                  mean_diameter=0.0, percolates=False)
+            metrics[phase] = dict(proportion=0.0, n_components=0, mean_area=0.0, 
+                                  largest_area=0, mean_diameter=0.0, percolates=False)
             continue
 
-        areas = np.bincount(labeled.ravel())[1:]   # component areas (skip background label 0)
+        areas = np.bincount(labeled.ravel())[1:]
 
         percolates = any(
             (labeled == k)[0, :].any() and (labeled == k)[-1, :].any()
