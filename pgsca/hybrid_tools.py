@@ -39,6 +39,43 @@ def _fit_range(B, theta, sampling_size, sampling_seed, bin_edges, corrected, wei
     model.fit_variogram(bin_center, gamma, anis=False, weights=weights)
     return model.len_scale
 
+def _fit_range_rose(B, angles, sampling_size, sampling_seed, bin_edges,
+                    corrected, weights=None):
+    """Directional Gaussian range at each angle -- a 'rose' of ranges."""
+    return np.array([
+        _fit_range(B, th, sampling_size, sampling_seed, bin_edges,
+                   corrected=corrected, weights=weights)
+        for th in angles
+    ])
+
+
+def _ellipse_orientation(angles, ranges):
+    """Fit a centred ellipse to a rose of directional variogram ranges.
+
+    The range in direction theta of a geometric-anisotropy field obeys
+        1/R^2 = a*cos^2 th + b*sin^2 th + 2h*sin th cos th,
+    LINEAR in (a, b, h) -> one least-squares fit over ALL directions at once
+    (robust to noise in any single direction). Read the axes off the 2x2 form
+    [[a, h],[h, b]]: eigenvalue lambda = 1/L^2 along its eigenvector, so the
+    SMALLER eigenvalue is the MAJOR axis (longest range).
+    Returns (alpha, L_major, L_minor); alpha in [0, pi).
+    """
+    th = np.asarray(angles, float)
+    R  = np.asarray(ranges, float)
+    good = R > 1e-9
+    th, R = th[good], R[good]
+    u = 1.0 / R**2
+    M = np.column_stack([np.cos(th)**2, np.sin(th)**2, 2*np.sin(th)*np.cos(th)])
+    a, b, h = np.linalg.lstsq(M, u, rcond=None)[0]
+    Q = np.array([[a, h], [h, b]])
+    evals, evecs = np.linalg.eigh(Q)              # ascending
+    evals   = np.clip(evals, 1e-12, None)
+    lengths = 1.0 / np.sqrt(evals)                # length along each eigenvector
+    i_major = int(np.argmax(lengths))
+    L_major, L_minor = lengths[i_major], lengths[1 - i_major]
+    vx, vy  = evecs[:, i_major]
+    alpha   = np.arctan2(vy, vx) % np.pi
+    return alpha, L_major, L_minor
 
 
 
@@ -61,17 +98,18 @@ def _auto_max_dist_frac(gamma_source, grid_size, cap=0.7, floor=0.05):
     return float(np.clip(5.0 * L0 / grid_size, floor, cap))
 
 def estimate_anisotropy(
-    B, coarse_n_angles=18, fine_span_deg=15, fine_n_angles=21,
-    coarse_sampling_size=4000, fine_sampling_size=6000,
-    final_sampling_size=10000, sampling_seed=1,
-    max_dist_frac='auto', n_bins=25, search_weights='inv',
+    B, n_angles=24, sampling_size=6000, final_sampling_size=10000,
+    sampling_seed=1, max_dist_frac='auto', n_bins=25, search_weights='inv',
     help=False
 ):
     if help:
         print("""
         estimate_anisotropy(): recovers (alpha, L_major, L_minor) for one
-        binary field via directional variograms + arcsine correction.
-        See handoff Appendix C.
+        binary field. One directional sweep across [0, pi), then an ellipse
+        fit to the whole range rose for the orientation (uses every direction,
+        not just the peak). Major/minor lengths are arcsine-corrected fits
+        along the recovered axes.
+        Returns (alpha, L_major, L_minor, sweep_angles, sweep_ranges).
         """)
         return
     grid_size = B.shape[0]
@@ -80,41 +118,25 @@ def estimate_anisotropy(
         def _omni(edges):
             return gs.vario_estimate((x, y), B.astype(float), bin_edges=edges,
                                      mesh_type='structured',
-                                     sampling_size=coarse_sampling_size,
+                                     sampling_size=sampling_size,
                                      sampling_seed=sampling_seed)
         max_dist_frac = _auto_max_dist_frac(_omni, grid_size)
     bin_edges = np.linspace(0, max_dist_frac * grid_size, n_bins)
 
-    # coarse angle sweep
-    coarse_angles = np.linspace(0, np.pi, coarse_n_angles, endpoint=False)
-    coarse_ranges = np.array([
-        _fit_range(B, th, coarse_sampling_size, sampling_seed, bin_edges,
-                   corrected=False, weights=search_weights)
-        for th in coarse_angles
-    ])
-    coarse_best = coarse_angles[np.argmax(coarse_ranges)]
+    # one directional sweep across [0, pi); fit an ellipse to the whole rose
+    sweep_angles = np.linspace(0, np.pi, n_angles, endpoint=False)
+    sweep_ranges = _fit_range_rose(B, sweep_angles, sampling_size, sampling_seed,
+                                   bin_edges, corrected=False, weights=search_weights)
+    alpha_star, _, _ = _ellipse_orientation(sweep_angles, sweep_ranges)
 
-    # fine angle sweep around the coarse best
-    half_span = np.deg2rad(fine_span_deg)
-    fine_angles = np.linspace(coarse_best - half_span, coarse_best + half_span,
-                              fine_n_angles) % np.pi
-    fine_ranges = np.array([
-        _fit_range(B, th, fine_sampling_size, sampling_seed, bin_edges,
-                   corrected=False, weights=search_weights)
-        for th in fine_angles
-    ])
-    alpha_star = fine_angles[np.argmax(fine_ranges)]
-
-    # final major/minor length scale fits
+    # final major/minor lengths: arcsine-corrected fits along the recovered axes
     L_major_star = _fit_range(B, alpha_star, final_sampling_size, sampling_seed,
                               bin_edges, corrected=True)
-    perp_theta = (alpha_star + np.pi / 2) % np.pi
-    L_minor_star = _fit_range(B, perp_theta, final_sampling_size, sampling_seed,
+    perp = (alpha_star + np.pi / 2) % np.pi
+    L_minor_star = _fit_range(B, perp, final_sampling_size, sampling_seed,
                               bin_edges, corrected=True)
 
-    return (alpha_star, L_major_star, L_minor_star,
-            coarse_angles, coarse_ranges, fine_angles, fine_ranges)
-
+    return alpha_star, L_major_star, L_minor_star, sweep_angles, sweep_ranges
 
 # ---------------------------------------------------------------------
 # 3. Combination (PGS-seeded K-map refinement) -- Task 1
@@ -183,10 +205,8 @@ def _fit_range_masked(values, pos, p, theta, sampling_size, sampling_seed,
 
 
 def estimate_anisotropy_masked(
-    I, mask, coarse_n_angles=18, fine_span_deg=15, fine_n_angles=21,
-    coarse_sampling_size=2500, fine_sampling_size=3000,
-    final_sampling_size=5000, sampling_seed=1,
-    max_dist_frac='auto', n_bins=25, search_weights='inv',
+    I, mask, n_angles=24, sampling_size=3000, final_sampling_size=5000,
+    sampling_seed=1, max_dist_frac='auto', n_bins=25, search_weights='inv',
     help=False
 ):
     if help:
@@ -198,12 +218,13 @@ def estimate_anisotropy_masked(
                is the *conditional* indicator variogram on the masked region.
         (remaining parameters as in estimate_anisotropy)
 
-        Same coarse-to-fine directional-variogram recovery as
-        estimate_anisotropy, but computed on an unstructured point set
-        (the masked pixels) instead of the full structured grid. Used to
-        recover the SECOND Gaussian field of a plurigaussian map, whose
-        indicator (phase 2 vs phase 1) is only defined where field 1 has
-        already been classified away from phase 0.
+        Field-2 recovery on the masked (unstructured) point set. One
+        directional sweep across [0, pi), then an ellipse fit to the whole
+        range rose for the orientation (uses every direction, not just the
+        peak); major/minor lengths are arcsine-corrected fits along the
+        recovered axes. Used to recover the SECOND Gaussian field of a
+        plurigaussian map, whose indicator (phase 2 vs phase 1) is only
+        defined where field 1 has been classified away from phase 0.
 
         Returns (alpha_star, L_major_star, L_minor_star).
         """)
@@ -217,31 +238,21 @@ def estimate_anisotropy_masked(
         def _omni(edges):
             return gs.vario_estimate(pos, values, bin_edges=edges,
                                      mesh_type='unstructured',
-                                     sampling_size=coarse_sampling_size,
+                                     sampling_size=sampling_size,
                                      sampling_seed=sampling_seed)
         max_dist_frac = _auto_max_dist_frac(_omni, grid_size, cap=0.5)
     bin_edges = np.linspace(0, max_dist_frac * grid_size, n_bins)
 
-    coarse_angles = np.linspace(0, np.pi, coarse_n_angles, endpoint=False)
-    coarse_ranges = np.array([
-        _fit_range_masked(values, pos, p, th, coarse_sampling_size,
-                          sampling_seed, bin_edges, corrected=False,
-                          weights=search_weights)
-        for th in coarse_angles
+    # one directional sweep on the masked indicator; ellipse fit for orientation
+    sweep_angles = np.linspace(0, np.pi, n_angles, endpoint=False)
+    sweep_ranges = np.array([
+        _fit_range_masked(values, pos, p, th, sampling_size, sampling_seed,
+                          bin_edges, corrected=False, weights=search_weights)
+        for th in sweep_angles
     ])
-    coarse_best = coarse_angles[np.argmax(coarse_ranges)]
+    alpha_star, _, _ = _ellipse_orientation(sweep_angles, sweep_ranges)
 
-    half_span = np.deg2rad(fine_span_deg)
-    fine_angles = np.linspace(coarse_best - half_span, coarse_best + half_span,
-                              fine_n_angles) % np.pi
-    fine_ranges = np.array([
-        _fit_range_masked(values, pos, p, th, fine_sampling_size,
-                          sampling_seed, bin_edges, corrected=False,
-                          weights=search_weights)
-        for th in fine_angles
-    ])
-    alpha_star = fine_angles[np.argmax(fine_ranges)]
-
+    # final major/minor lengths: arcsine-corrected fits along the recovered axes
     L_major_star = _fit_range_masked(values, pos, p, alpha_star,
                                      final_sampling_size, sampling_seed,
                                      bin_edges, corrected=True)
