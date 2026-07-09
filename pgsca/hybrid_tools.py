@@ -188,6 +188,13 @@ def estimate_anisotropy_masked(
     return alpha_star, L_major_star, L_minor_star
 
 
+def _circular_mean_angle(angles):
+    """Circular mean for angles in [0, π) using the double-angle trick."""
+    doubled = 2.0 * np.asarray(angles, float)
+    mean_doubled = np.arctan2(np.mean(np.sin(doubled)), np.mean(np.cos(doubled)))
+    return float(mean_doubled / 2 % np.pi)
+
+
 def recover_plurigaussian(real_map, sampling_seed=1, **kwargs):
     """
     Recovers the FULL plurigaussian parameter set by reversing the hierarchical truncation.
@@ -210,3 +217,50 @@ def recover_plurigaussian(real_map, sampling_seed=1, **kwargs):
     return dict(proportions=props.tolist(), cut_1=float(cut_1), cut_2=float(cut_2),
                 params_1=(float(a1), float(L1maj), float(L1min)),
                 params_2=(float(a2), float(L2maj), float(L2min)))
+
+
+def recover_plurigaussian_multi(slices, time_budget=None, sampling_seed=1, **kwargs):
+    """
+    Runs recover_plurigaussian on each slice in `slices`, stopping early when
+    `time_budget` seconds have elapsed (if given), then returns the averaged
+    parameters.  Angles are averaged with a circular mean so wrapping at π is
+    handled correctly.
+
+    Parameters
+    ----------
+    slices      : iterable of 2-D int arrays — lithotype slices to process.
+    time_budget : float | None — wall-clock seconds; stop after this budget is
+                  exhausted.  None means process every slice.
+    sampling_seed, **kwargs : forwarded to recover_plurigaussian.
+
+    Returns
+    -------
+    dict with the same keys as recover_plurigaussian plus 'n_slices_used'.
+    """
+    import time
+    results = []
+    t0 = time.perf_counter()
+    for s in slices:
+        results.append(recover_plurigaussian(s, sampling_seed=sampling_seed, **kwargs))
+        if time_budget is not None and (time.perf_counter() - t0) >= time_budget:
+            break
+
+    if not results:
+        raise ValueError("No slices were processed — check that `slices` is non-empty.")
+
+    props  = np.mean([r['proportions'] for r in results], axis=0).tolist()
+    cut_1  = float(np.mean([r['cut_1']  for r in results]))
+    cut_2  = float(np.mean([r['cut_2']  for r in results]))
+    a1     = _circular_mean_angle([r['params_1'][0] for r in results])
+    Lmaj1  = float(np.mean([r['params_1'][1] for r in results]))
+    Lmin1  = float(np.mean([r['params_1'][2] for r in results]))
+    a2     = _circular_mean_angle([r['params_2'][0] for r in results])
+    Lmaj2  = float(np.mean([r['params_2'][1] for r in results]))
+    Lmin2  = float(np.mean([r['params_2'][2] for r in results]))
+
+    return dict(
+        proportions=props, cut_1=cut_1, cut_2=cut_2,
+        params_1=(a1, Lmaj1, Lmin1),
+        params_2=(a2, Lmaj2, Lmin2),
+        n_slices_used=len(results),
+    )

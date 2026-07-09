@@ -8,12 +8,14 @@ from .pgs_tools import (make_gaussian_fields, make_lithotype_map,
 from .karnaugh_tools import (encode_neighbourhood, build_table, apply_table,
                              sequential_simulate, compute_morphology)
 from .hybrid_tools import (estimate_anisotropy, estimate_anisotropy_masked,
-                           recover_plurigaussian, make_pgs_seed)
+                           recover_plurigaussian, recover_plurigaussian_multi,
+                           make_pgs_seed)
 
 __all__ = [
     "make_gaussian_fields", "make_lithotype_map", "plot_fields",
     "plot_lithotype_map", "encode_neighbourhood", "build_table", "apply_table",
     "sequential_simulate", "compute_morphology", "estimate_anisotropy",
-    "estimate_anisotropy_masked", "recover_plurigaussian", "make_pgs_seed",
+    "estimate_anisotropy_masked", "recover_plurigaussian",
+    "recover_plurigaussian_multi", "make_pgs_seed",
 ]
 __version__ = "0.1.0"
