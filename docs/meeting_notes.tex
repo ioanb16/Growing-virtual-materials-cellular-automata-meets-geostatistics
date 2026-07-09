@@ -1,0 +1,154 @@
+\documentclass[11pt, a4paper]{article}
+
+\usepackage{amsmath, amssymb}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{parskip}
+\usepackage{booktabs}
+\usepackage{enumitem}
+
+\geometry{margin=2.5cm}
+
+\title{\textbf{Meeting Notes} \\ \large Summer Research Progress: Hybrid PGS--CA Pipeline for Synthetic Microstructure Generation}
+\author{Ioan Barberi}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Overview}
+
+The goal of this project is to generate synthetic 3D microstructure images that are statistically indistinguishable from real battery electrode data. The approach combines two methods: \textbf{Plurigaussian Simulation (PGS)}, which captures large-scale geometric structure, and a \textbf{Karnaugh Map Cellular Automaton (CA)}, which refines the fine-scale texture. Together they form a fully data-driven pipeline that requires only a set of real 2D slices as input.
+
+\section{Stage 1 --- Plurigaussian Simulation (PGS)}
+
+\subsection{Motivation}
+
+A real material slice contains structure at two scales. The \emph{macro-scale} describes the overall geometry: how large the features are, what direction they are oriented in, and what fraction of the image each phase occupies. PGS is a geostatistical method designed to capture exactly this information in a small set of interpretable physical parameters.
+
+\subsection{Generating a Three-Phase Map}
+
+Two independent stationary Gaussian random fields $Z_1(\mathbf{x})$ and $Z_2(\mathbf{x})$ are generated on a 2D grid. Each field is characterised by a covariance model --- here a Gaussian model --- with parameters:
+\begin{itemize}
+    \item $\alpha$: orientation angle of the anisotropy ellipse (radians)
+    \item $L_{\text{maj}}$: correlation length along the major axis (pixels)
+    \item $L_{\text{min}}$: correlation length along the minor axis (pixels)
+\end{itemize}
+
+The covariance function for a Gaussian model in 2D with anisotropy is
+\begin{equation}
+    C(\mathbf{h}) = \sigma^2 \exp\!\left(-\frac{h_1^2}{L_{\text{maj}}^2} - \frac{h_2^2}{L_{\text{min}}^2}\right)
+\end{equation}
+where $h_1, h_2$ are the lag components rotated into the principal axes of the anisotropy ellipse.
+
+A three-phase lithotype map $L(\mathbf{x}) \in \{0, 1, 2\}$ is then produced by a \emph{truncation rule}:
+\begin{equation}
+    L(\mathbf{x}) = \begin{cases}
+        0 & \text{if } Z_1(\mathbf{x}) < t_1 \\
+        1 & \text{if } Z_1(\mathbf{x}) \geq t_1 \text{ and } Z_2(\mathbf{x}) < t_2 \\
+        2 & \text{if } Z_1(\mathbf{x}) \geq t_1 \text{ and } Z_2(\mathbf{x}) \geq t_2
+    \end{cases}
+\end{equation}
+The thresholds $t_1$ and $t_2$ are chosen to match target proportions $p_0, p_1, p_2$:
+\begin{align}
+    t_1 &= \Phi^{-1}(p_0) \\
+    t_2 &= \Phi^{-1}\!\left(\frac{p_1}{p_1 + p_2}\right)
+\end{align}
+where $\Phi^{-1}$ is the standard normal quantile function.
+
+\subsection{Parameter Recovery from Real Data}
+
+Given a real slice, the task is to recover the six parameters $(\alpha_1, L_{\text{maj},1}, L_{\text{min},1})$ and $(\alpha_2, L_{\text{maj},2}, L_{\text{min},2})$ that best explain the observed microstructure. This is done by reversing the truncation hierarchy.
+
+\paragraph{Step 1 --- Recover proportions.}
+Count the fraction of pixels in each phase directly from the real slice. Use equations (3) and (4) to recover $t_1$ and $t_2$.
+
+\paragraph{Step 2 --- Recover Field 1 parameters.}
+Isolate the binary indicator field $B_0(\mathbf{x}) = \mathbf{1}[L(\mathbf{x}) = 0]$, which corresponds directly to the exceedance of $Z_1$ below $t_1$. Compute the \emph{directional indicator variogram}:
+\begin{equation}
+    \gamma_I(\mathbf{h}) = \frac{1}{2|N(\mathbf{h})|} \sum_{N(\mathbf{h})} \bigl(B_0(\mathbf{x}+\mathbf{h}) - B_0(\mathbf{x})\bigr)^2
+\end{equation}
+where $N(\mathbf{h})$ is the set of all pairs separated by lag vector $\mathbf{h}$, estimated along a fixed direction $\theta$. A Gaussian-anamorphosis correction converts the indicator variogram back to the underlying Gaussian variogram:
+\begin{equation}
+    \rho_Z(h) = \sin\!\left(\frac{\pi}{2} \rho_I(h)\right), \qquad \rho_I(h) = 1 - \frac{\gamma_I(h)}{p_0(1-p_0)}
+\end{equation}
+
+A directional range is estimated at each angle in a sweep $\theta \in [0, \pi)$. The resulting \emph{rose of ranges} is fitted to a centred ellipse using linear least squares to recover $\alpha_1$, $L_{\text{maj},1}$, and $L_{\text{min},1}$.
+
+\paragraph{Step 3 --- Recover Field 2 parameters.}
+Field 2 is only observable on the subset of pixels where $L(\mathbf{x}) \neq 0$ (i.e.\ where $Z_1 \geq t_1$). The same variogram and ellipse fitting procedure is applied on this masked, unstructured point set to recover $\alpha_2$, $L_{\text{maj},2}$, and $L_{\text{min},2}$.
+
+\subsection{Multi-Slice Averaging}
+
+A single slice gives noisy parameter estimates because the variogram is estimated from a finite sample. To improve stability, the recovery is run on $N$ slices spread across the 3D volume and the results are averaged:
+\begin{align}
+    \bar{p}_k &= \frac{1}{N}\sum_{i=1}^N p_k^{(i)}, \quad k \in \{0,1,2\} \\
+    \bar{L} &= \frac{1}{N}\sum_{i=1}^N L^{(i)}
+\end{align}
+Orientation angles lie in $[0, \pi)$ and require a \emph{circular mean} to avoid wrap-around artefacts:
+\begin{equation}
+    \bar{\alpha} = \frac{1}{2}\operatorname{atan2}\!\left(\sum_{i=1}^N \sin(2\alpha^{(i)}),\ \sum_{i=1}^N \cos(2\alpha^{(i)})\right) \mod \pi
+\end{equation}
+
+\section{Stage 2 --- Karnaugh Map Cellular Automaton (CA)}
+
+\subsection{Motivation}
+
+The PGS seed has the correct macro-statistics (proportions, orientation, length scales) but its micro-texture does not match the real material because the truncated Gaussian model cannot capture the complex local geometry seen in real data. The CA learns these local rules directly from real slices and uses them to refine the seed.
+
+\subsection{Building the K-Map Transition Table}
+
+For every pixel $\mathbf{x}$ in a real training slice, record its eight neighbours (Moore neighbourhood). The neighbourhood pattern is encoded as an integer:
+\begin{equation}
+    \text{id}(\mathbf{x}) = \sum_{k} s_k \cdot 3^k, \quad s_k \in \{0,1,2\}
+\end{equation}
+where $s_k$ is the phase of the $k$-th neighbour. With 8 neighbours and 3 phases there are $3^8 = 6561$ possible patterns.
+
+For each pattern $j$ and each phase $c$, count how often the centre pixel is phase $c$:
+\begin{equation}
+    T[j, c] = \frac{\text{count}(j, c)}{\sum_{c'} \text{count}(j, c')}
+\end{equation}
+This gives a $6561 \times 3$ probability table. Patterns never seen in training have zero counts and are handled by keeping the existing cell value unchanged.
+
+\subsection{Sequential Simulation}
+
+The CA refines the PGS seed by visiting every pixel in a random order and stochastically updating its phase by sampling from $T[\text{id}(\mathbf{x}), \cdot]$, corrected for any drift in the global phase proportions:
+\begin{equation}
+    \tilde{T}[j,c] \propto T[j,c] \cdot \frac{p_c^{\text{target}}}{p_c^{\text{current}} + \varepsilon}
+\end{equation}
+This is repeated for multiple passes until the fraction of cells changed per pass falls below a convergence threshold.
+
+\section{Current Results}
+
+\begin{itemize}
+    \item The pipeline runs end to end on real battery data (\texttt{ThreePhase.tif}, $256 \times 256 \times 256$ voxels).
+    \item Multi-slice PGS averaging is implemented and working; parameters are estimated from up to 51 slices on Colab.
+    \item A caching system saves computed parameters and the K-map table to Google Drive so the expensive computation only runs once.
+    \item Visual comparison shows the synthetic image is plausible but still sometimes distinguishable from real slices --- primarily due to micro-texture not fully converging.
+\end{itemize}
+
+\section{Where It Can Go Next}
+
+\subsection{Short Term}
+
+\begin{itemize}
+    \item \textbf{Quantitative evaluation}: replace visual inspection with morphology metrics --- phase proportions, number of connected components, mean blob area, percolation --- computed on both real and synthetic images to measure quality objectively.
+    \item \textbf{Wider neighbourhood}: extend the K-map to $5 \times 5$ or $7 \times 7$ patches. This cannot be a full lookup table (too many patterns) but a \emph{random forest} or \emph{$k$-nearest-neighbour} classifier on patch features would capture longer-range rules the current 1-cell neighbourhood misses.
+\end{itemize}
+
+\subsection{Medium Term}
+
+\begin{itemize}
+    \item \textbf{CNN-based refinement}: replace the K-map entirely with a small convolutional neural network (e.g.\ U-Net) trained to predict the centre pixel given a local patch from real data. PGS remains as the seed generator, providing physically meaningful macro-structure control. This is a modest engineering step and could significantly close the remaining quality gap.
+\end{itemize}
+
+\subsection{Long Term (Possible Masters Direction)}
+
+\begin{itemize}
+    \item \textbf{PGS-conditioned generative model}: use a GAN or diffusion model conditioned on the PGS seed to generate near-photorealistic synthetic slices. The key scientific contribution is retaining PGS as an interpretable physical prior --- the model is not a black box but produces outputs with known, controllable macro-statistics.
+    \item \textbf{Why this matters}: generating unlimited realistic synthetic microstructures means flow, conductivity, and mechanical simulations can be run on large ensembles without acquiring expensive experimental data.
+\end{itemize}
+
+\end{document}
