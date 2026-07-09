@@ -1,6 +1,6 @@
 import numpy as np
 import gstools as gs
-import matplotlib.subplots as plt
+import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 
 def make_gaussian_fields(
